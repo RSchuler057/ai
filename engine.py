@@ -334,8 +334,9 @@ class Game():
     def next_player(self):
         active = [i for i in range(6) if not self.folded[i] and not self.eliminated[i]]
 
-        if all(self.acted[i] for i in active):
-            return
+        if not active or all(self.acted[i] for i in active):
+            self.done = True
+            return self.get_state()
         
         next_p = (self.current_player + 1) % 6
         start_p = next_p
@@ -343,7 +344,8 @@ class Game():
         while self.acted[next_p] or self.folded[next_p] or self.eliminated[next_p] or self.stacks[next_p] == 0:
             next_p = (next_p + 1) % 6
             if next_p == start_p:
-                break
+                self.done = True
+                return self.get_state()
         
         self.current_player = next_p
         return self.get_state()
@@ -355,7 +357,7 @@ class Game():
     
     def betting_round_over(self):
         active = [i for i in range(6) if not self.folded[i] and not self.eliminated[i]]
-        all_acted = all(self.acted[i] for i in active)
+        all_acted = all(self.acted[i] or self.stacks[i] == 0 for i in active)
         active_bets = [self.bets[i] for i in active]
         bets_equal = len(set(active_bets)) == 1
         return all_acted and bets_equal
@@ -363,6 +365,9 @@ class Game():
     def update_eliminated(self):
         self.eliminated = [stack == 0 for stack in self.stacks]
         self.declare_winner()
+        if self.eliminated.count(False) == 1:
+            self.done = True
+            self.game_over = True
         return self.get_state()
         
     def declare_winner(self):
@@ -375,6 +380,7 @@ class Game():
                 self.pots = []
 
             self.game_over = True
+            self.done = True
             
         else:
             self.game_over = False
