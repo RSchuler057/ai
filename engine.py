@@ -405,5 +405,3 @@ class Game():
             "winner": getattr(self, "winner", None),
             "showdown_results": getattr(self, "showdown_results", None),
         }
-
- #Ryan is gay lkao   
