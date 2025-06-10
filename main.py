@@ -14,6 +14,11 @@ def print_state(game):
         
     print(f"Current Player: {state['player_names'][state['current_player']]}")
     print(f"Pot(s): {state['display_pots']}")
+    ### Next few lines are for debugging purposes
+    print(f"Players Acted: {state['acted']}")
+    print(f"Eliminated Players: {state['eliminated']}")
+    print(f"Game Over: {state['game_over']}")
+    ### End of debugging lines
     print("-------------------\n")
 
 def get_action(game):
@@ -60,14 +65,23 @@ def pretty_print_hand(hand):
 def main():
     game = Game()
     game.start()
+    iteration = 0
 
     while not game.get_state().get("game_over", False):
+        iteration += 1
+        if iteration > 150:  # Prevent infinite loop
+            print("Infinite loop detected. Exiting game.")
+            break
+        
         print_state(game)
         state = game.get_state()
         player = state['current_player']
 
         if state['stacks'][player] == 0 or state['folded'][player] or state['eliminated'][player]:
             game.next_player()
+            if game.get_state()["done"]:
+                print("Hand over. Starting next hand...")
+                game.next_hand()
             continue
 
         if game.get_state().get("showdown_results"):

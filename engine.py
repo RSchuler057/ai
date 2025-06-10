@@ -83,7 +83,6 @@ class Game():
         self.acted = [False] * 6
         self.folded = [False] * 6
         self.eliminated = [stack == 0 for stack in self.stacks]
-        self.next_stage = False
         self.showdown_results = None
 
         sb = (self.button + 1) % 6
@@ -217,7 +216,7 @@ class Game():
         self.pots = []  # Clear the pots after awarding
         self.update_eliminated()
         self.declare_winner()
-        return self.get_state(), self.folded
+        return self.get_state()
     
     def all_in_check(self):
         if self.stacks[self.current_player] == 0:
@@ -281,7 +280,6 @@ class Game():
             self.pots = []
             return self.get_state()
         
-        
         self.next_player()
         return self.get_state()
 
@@ -334,17 +332,15 @@ class Game():
     def next_player(self):
         active = [i for i in range(6) if not self.folded[i] and not self.eliminated[i]]
 
-        if not active or all(self.acted[i] for i in active):
-            self.done = True
+        if all(self.acted[i] or self.stacks[i] == 0 for i in active):
             return self.get_state()
-        
+                
         next_p = (self.current_player + 1) % 6
         start_p = next_p
 
         while self.acted[next_p] or self.folded[next_p] or self.eliminated[next_p] or self.stacks[next_p] == 0:
             next_p = (next_p + 1) % 6
             if next_p == start_p:
-                self.done = True
                 return self.get_state()
         
         self.current_player = next_p
@@ -357,17 +353,26 @@ class Game():
     
     def betting_round_over(self):
         active = [i for i in range(6) if not self.folded[i] and not self.eliminated[i]]
+
+        if not active:
+            return False
+        
+        max_bet = max(self.bets[i] for i in active)
         all_acted = all(self.acted[i] or self.stacks[i] == 0 for i in active)
-        active_bets = [self.bets[i] for i in active]
-        bets_equal = len(set(active_bets)) == 1
-        return all_acted and bets_equal
+        bets_matched = all(
+            self.bets[i] == max_bet or self.stacks[i] == 0
+            for i in active
+        )
+        return all_acted and bets_matched
     
     def update_eliminated(self):
         self.eliminated = [stack == 0 for stack in self.stacks]
         self.declare_winner()
+
         if self.eliminated.count(False) == 1:
             self.done = True
             self.game_over = True
+
         return self.get_state()
         
     def declare_winner(self):
@@ -398,6 +403,7 @@ class Game():
             "stage": self.stage,
             "pots": self.pots,
             "display_pots": self.get_display_pots(),
+            "acted": self.acted, # Debugging state
             'folded': self.folded,
             "done": self.done,
             "eliminated": self.eliminated,
