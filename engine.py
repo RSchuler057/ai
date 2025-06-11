@@ -63,11 +63,9 @@ class Game():
 
     def all_active_all_in(self):
         active = [i for i in range(6) if not self.folded[i] and not self.eliminated[i]]
+        all_in_count = sum(self.stacks[i] == 0 for i in active)
 
-        if len(active) <= 1:
-            return False
-        
-        return all(self.stacks[i] == 0 for i in active)
+        return len(active) > 1 and (all_in_count == len(active) or all_in_count == len(active) - 1)
     
     def start(self):
         self.deck = Deck()
@@ -111,7 +109,6 @@ class Game():
         self.current_player = current
 
         self.update_pots()
-        self.update_eliminated()
 
         return self.get_state(), self.folded
     
@@ -121,9 +118,6 @@ class Game():
         self.stage = 'flop'
         self.acted = [False] * 6
         self.next_p = (self.button + 1) % 6
-
-        if self.all_active_all_in():
-            return self.showdown()
 
         while self.folded[self.next_p] or self.eliminated[self.next_p]:
             self.next_p = (self.next_p + 1) % 6
@@ -138,9 +132,6 @@ class Game():
         self.acted = [False] * 6
         self.next_p = (self.button + 1) % 6
 
-        if self.all_active_all_in():
-            return self.showdown()
-
         while self.folded[self.next_p] or self.eliminated[self.next_p]:
             self.next_p = (self.next_p + 1) % 6
 
@@ -154,9 +145,6 @@ class Game():
         self.acted = [False] * 6
         self.next_p = (self.button + 1) % 6
 
-        if self.all_active_all_in():
-            return self.showdown()
-
         while self.folded[self.next_p] or self.eliminated[self.next_p]:
             self.next_p = (self.next_p + 1) % 6
 
@@ -165,6 +153,11 @@ class Game():
 
     def showdown(self):
         self.stage = 'showdown'
+        missing = 5 - len(self.community_cards)
+
+        if missing > 0:
+            self.community_cards.extend(self.deck.draw(missing))
+
         scores = []
         hand_ranks = []
         all_winners = []
@@ -280,12 +273,14 @@ class Game():
             self.pots = []
             return self.get_state()
         
+        self.betting_round_over()
         self.next_player()
         return self.get_state()
 
     def check(self):
         self.acted[self.current_player] = True
         self.all_in_check()
+        self.betting_round_over()
         self.next_player()
         return self.get_state()
     
@@ -298,6 +293,7 @@ class Game():
         self.all_in_check()
         self.acted[self.current_player] = True
         self.update_pots()
+        self.betting_round_over()
         self.next_player()
         return self.get_state()
         
@@ -321,11 +317,12 @@ class Game():
         self.update_pots()
         
         for i in range(6):
-            if i == self.current_player or self.folded[i]:
+            if i == self.current_player or self.folded[i] or self.bets[i] == max(self.bets):
                 self.acted[i] = True
             else:
                 self.acted[i] = False
 
+        self.betting_round_over()
         self.next_player()
         return self.get_state()
     
@@ -348,6 +345,8 @@ class Game():
     
     def next_hand(self):
         self.button = (self.button + 1) % 6
+        while self.stacks[self.button] == 0:
+            self.button = (self.button + 1) % 6
         self.start()
         return self.get_state()
     
@@ -369,7 +368,7 @@ class Game():
         self.eliminated = [stack == 0 for stack in self.stacks]
         self.declare_winner()
 
-        if self.eliminated.count(False) == 1:
+        if self.eliminated.count(False) <= 1:
             self.done = True
             self.game_over = True
 

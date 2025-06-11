@@ -30,14 +30,15 @@ def get_action(game):
     print(f"Your cards: {pretty_print_hand(state['player_hands'][player])}")
     
     if amount_to_call == 0:
-        actions = ['check', 'bet', 'fold']
+        actions = ['check', 'bet']
+
     else:
         actions = ['call', 'raise', 'fold']
 
     print(f"Valid actions: {', '.join(actions)}")
     action = input(f"Choose action ({', '.join(actions)}): ").strip().lower()
 
-    if action == 'fold':
+    if action == 'fold' and amount_to_call > 0:
         return FOLD, amount_to_call, None
     
     elif action == 'check' and amount_to_call == 0:
@@ -69,6 +70,7 @@ def main():
 
     while not game.get_state().get("game_over", False):
         iteration += 1
+
         if iteration > 150:  # Prevent infinite loop
             print("Infinite loop detected. Exiting game.")
             break
@@ -79,6 +81,7 @@ def main():
 
         if state['stacks'][player] == 0 or state['folded'][player] or state['eliminated'][player]:
             game.next_player()
+
             if game.get_state()["done"]:
                 print("Hand over. Starting next hand...")
                 game.next_hand()
@@ -103,6 +106,10 @@ def main():
             continue
 
         if game.betting_round_over() and not game.get_state()["done"]:
+            if game.all_active_all_in():
+                print("All active players are all-in. Proceeding to showdown.")
+                game.showdown()
+                
             if game.stage == 'preflop':
                     game.flop()
 
