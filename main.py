@@ -27,7 +27,7 @@ def get_action(game):
     amount_to_call = max(state['bets']) - state['bets'][player]
 
     print(f"{state['player_names'][player]}'s turn. Stack: {state['stacks'][player]}, Bet: {state['bets'][player]}, Amount to call: {amount_to_call}")
-    print(f"Your cards: {pretty_print_hand(state['player_hands'][player])}")
+    print(f"Your cards: {pretty_print_hand(state['player_hands'][player])}\n")
     
     if amount_to_call == 0:
         actions = ['check', 'bet']
@@ -83,20 +83,17 @@ def main():
             game.next_player()
 
             if game.get_state()["done"]:
-                print("Hand over. Starting next hand...")
+                print("\nHand over. Starting next hand...")
                 game.next_hand()
             continue
 
-        if game.get_state().get("showdown_results"):
-            print("Showdown Results:", game.get_state()["showdown_results"])
-
         if game.get_state()["done"]:
-            print("Hand over. Starting next hand...")
+            print("\nHand over. Starting next hand...")
             game.next_hand()
             continue
 
         action, amount_to_call, raise_amt = get_action(game)
-        print(f"{state['player_names'][player]} chooses: {ACTION_NAMES[action]}")
+        print(f"\n{state['player_names'][player]} chooses: {ACTION_NAMES[action]}")
 
         try:
             game.action(action, amount_to_call, raise_amt)
@@ -107,8 +104,13 @@ def main():
 
         if game.betting_round_over() and not game.get_state()["done"]:
             if game.all_active_all_in():
-                print("All active players are all-in. Proceeding to showdown.")
+                print("\nAll active players are all-in. Proceeding to showdown.")
                 game.showdown()
+                if game.get_state().get("showdown_results"):
+                        for result in game.get_state()["showdown_results"]:
+                            for winner, hand in zip(result['winners'], result['winning_hand']):
+                                print(f"\nPot: {result['pot']}, Winner: {winner}, Winning Hand: {pretty_print_hand(hand)}, Hand Type: {result['winning_hand_type']}")
+                continue
                 
             if game.stage == 'preflop':
                     game.flop()
@@ -121,9 +123,13 @@ def main():
 
             elif game.stage == 'river':
                     game.showdown()
+                    if game.get_state().get("showdown_results"):
+                        for result in game.get_state()["showdown_results"]:
+                            for winner, hand in zip(result['winners'], result['winning_hand']):
+                                print(f"\nPot: {result['pot']}, Winner: {winner}, Winning Hand: {pretty_print_hand(hand)}, Hand Type: {result['winning_hand_type']}")
+                    continue
 
-    print_state(game)
-    print(f"Game over. Winner: {game.player_names[game.winner]}")
+    print(f"\nGame over. Winner: {game.player_names[game.winner]}")
 
 if __name__ == "__main__":
     main()

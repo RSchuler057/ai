@@ -160,19 +160,23 @@ class Game():
 
         scores = []
         hand_ranks = []
+        hand_types = []
         all_winners = []
 
         for i in range(6):
             if not self.folded[i]:
                 score = self.evaluator.evaluate(self.player_hands[i], self.community_cards)
                 rank = self.evaluator.get_rank_class(score)
+                hand_type = self.evaluator.class_to_string(rank)
 
             else:
                 score = float('inf')
                 rank = None
+                hand_type = None
 
             scores.append(score)
             hand_ranks.append(rank)
+            hand_types.append(hand_type)
         
         showdown_results = []
 
@@ -199,6 +203,8 @@ class Game():
                 "pot": pot['amount'],
                 "winners": [self.player_names[i] for i in winners],
                 "winning_hand_rank": hand_ranks[winners[0]],
+                "winning_hand_type": hand_types[winners[0]],
+                "winning_hand": [self.player_hands[winners[0]]]
             })
         
         self.winners = list(set(all_winners))
