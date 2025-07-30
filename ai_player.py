@@ -1,25 +1,25 @@
-from stable_baselines3 import DQN
-import numpy as np
-from engine import Game, FOLD, CHECK, CALL, RAISE
+import random
 
-model = DQN.load("poker_dqn")
+class AIPlayer:
+    def __init__(self, name):
+        self.name = name
+        
+    def choose_action(self, valid_actions, amount_to_call=0, min_raise=0, max_raise=0):
+        action = random.choice(valid_actions)
+        if action in ['raise', 'bet']:
+            if max_raise > 0 and min_raise <= max_raise:
+                raise_amt = random.randint(min_raise, max_raise)
 
-def ai_action(game, player):
-    state = game.get_state()
-    obs = np.zeros(20)
-    obs[:6] = state['stacks']
-    obs[6:12] = state['bets']
+            elif max_raise > 0:
+                raise_amt = max_raise
 
-    action, _ = model.predict(obs, deterministic=True)
-
-    if action == 0:
-        return FOLD, 0, None
-    
-    elif action == 1:
-        return CALL, 0 , None
-    
-    elif action == 2:
-        return RAISE, 0, 20
-    
-    else:
-        return CHECK, 0 , None
+            else:
+                fallback_actions = [a for a in valid_actions if a not in ['raise', 'bet']]
+                if fallback_actions:
+                    action = random.choice(fallback_actions)
+                    return action, None
+                
+                else:
+                    return 'fold', None
+            return action, raise_amt
+        return action, None

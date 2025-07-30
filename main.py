@@ -1,5 +1,6 @@
 from engine import Game, FOLD, CHECK, CALL, RAISE
 from treys import Card
+from ai_player import AIPlayer
 
 ACTION_NAMES = {0: 'fold', 1: 'call', 2: 'raise', 3: 'check'}
 
@@ -21,10 +22,34 @@ def print_state(game):
     ### End of debugging lines
     print("-------------------\n")
 
-def get_action(game):
+def get_action(game, ai_players=None):
     state = game.get_state()
     player = state['current_player']
     amount_to_call = max(state['bets']) - state['bets'][player]
+
+    if ai_players and player in ai_players:
+        valid_actions = []
+        if amount_to_call == 0:
+            valid_actions = ['check']
+            if state['stacks'][player] >= game.big_blind:
+                valid_actions.append('bet')
+        else:
+            valid_actions = ['call', 'fold']
+            if state['stacks'][player] > amount_to_call:
+                valid_actions.append('raise')
+        
+        action, raise_amt = ai_players[player].choose_action(
+            valid_actions,
+            amount_to_call=amount_to_call,
+            min_raise=game.big_blind,
+            max_raise=state['stacks'][player]
+        )
+
+        if action in ['raise', 'bet']:
+            print(f"AI {state['player_names'][player]} chooses to {action} with raise amount: {raise_amt}")
+
+        action_map = {'fold': FOLD, 'call': CALL, 'raise': RAISE, 'check': CHECK, 'bet': RAISE}
+        return action_map[action], amount_to_call, raise_amt
 
     print(f"{state['player_names'][player]}'s turn. Stack: {state['stacks'][player]}, Bet: {state['bets'][player]}, Amount to call: {amount_to_call}")
     print(f"Your cards: {pretty_print_hand(state['player_hands'][player])}\n")
@@ -67,14 +92,17 @@ def main():
     game = Game()
     game.start()
     iteration = 0
+    ai_players = {
+        0: AIPlayer("AI Player 1"),
+        1: AIPlayer("AI Player 2"),
+        2: AIPlayer("AI Player 3"),
+        3: AIPlayer("AI Player 4"),
+        4: AIPlayer("AI Player 5"),
+        5: AIPlayer("AI Player 6"),
+    }
 
     while not game.get_state().get("game_over", False):
         iteration += 1
-
-        if iteration > 150:  # Prevent infinite loop
-            print("Infinite loop detected. Exiting game.")
-            break
-        
         print_state(game)
         state = game.get_state()
         player = state['current_player']
@@ -92,7 +120,7 @@ def main():
             game.next_hand()
             continue
 
-        action, amount_to_call, raise_amt = get_action(game)
+        action, amount_to_call, raise_amt = get_action(game, ai_players)
         print(f"\n{state['player_names'][player]} chooses: {ACTION_NAMES[action]}")
 
         try:
@@ -129,7 +157,9 @@ def main():
                                 print(f"\nPot: {result['pot']}, Winner: {winner}, Winning Hand: {pretty_print_hand(hand)}, Hand Type: {result['winning_hand_type']}")
                     continue
 
+    print_state(game)
     print(f"\nGame over. Winner: {game.player_names[game.winner]}")
+    print("Iterations:", iteration)
 
 if __name__ == "__main__":
     main()

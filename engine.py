@@ -239,20 +239,25 @@ class Game():
         
         elif action == RAISE:
             min_raise = max(self.bets) - self.bets[self.current_player] + self.big_blind
+            max_possible = self.stacks[self.current_player] + self.bets[self.current_player]
 
-            if raise_amount is None or raise_amount < min_raise:
+            if raise_amount is None:
                 return False
             
-            if raise_amount > self.stacks[self.current_player] + self.bets[self.current_player]:
-                return False
+            if raise_amount >= min_raise and raise_amount <= max_possible:
+                return True
             
-            return True
+            if raise_amount == max_possible:
+                return True
+            
+            return False
         
         return False
     
     def action(self, action, amount_to_call, raise_amount=None):
         if not self.is_action_valid(action, amount_to_call, raise_amount):
-            raise ValueError("Invalid action")
+            print(f"[ERROR] Invalid action received: action={action}, call={amount_to_call}, raise={raise_amount}")
+            return self.fold()
         
         if action == FOLD:
             return self.fold()
