@@ -1,12 +1,16 @@
-from engine import Game, FOLD
+from engine import Game, FOLD, CALL, RAISE, CHECK
+from typing import Optional, List
 import gymnasium as gym
-from gymnasium import spaces
+from gymnasium import spaces, ActionWrapper
+from gymnasium.spaces import Box
 import numpy as np
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_checker import check_env
+from sb3_contrib import MaskablePPO
+from sb3_contrib.common.wrappers import ActionMasker
+from treys import Card
 import logging
 import os
-from treys import Card
 
 if os.path.exists("poker_ai.log"):
     os.remove("poker_ai.log")
@@ -21,65 +25,160 @@ logging.basicConfig(
 class PokerEnv(gym.Env):
     def __init__(self):
         super(PokerEnv, self).__init__()
+        self.game: Optional[Game] = None
 
         self.observation_space = spaces.Box(low=0, high=1, shape=(self._obs_size(),), dtype=np.float32)
 
-        self.action_space = spaces.Box(low=np.array([0,0.0]), high=np.array([2.99, 100.0], dtype=np.float32))
+        self.action_space = spaces.MultiDiscrete([4, 601])  # (action_type, raise_amount_level)
 
         self.prev_stacks = None
+        self.current_state = None
+        self.game = None
+
+        self.iteration = 0
+
+        self.total_chips_expected = None
+    
+    def get_action_mask(self) -> List[bool]:
+        """Return a mask of valid actions for the current player."""
+        """
+        Returns a 1D boolean array of length sum(action_space.nvec).
+        First 4 entries: mask for [FOLD, CALL, RAISE, CHECK]
+        Next 601 entries: mask for the second dimension (raise_level)
+        """
+
+        # 0) Prevent crash from get_action_mask call before reset
+        if self.game is None or self.current_state is None:
+            return np.ones(4 + 601, dtype=bool)
+
+        # 1) mask for the first dimension (action_type)
+        base_mask = np.array(self.game.get_valid_actions_mask(), dtype=bool)
+
+        # 2) mask for the second dimension (raise_level)
+        # MaskablePPO samples all dimensions at once so this mask must be valid regardless of what was picked for action_type
+        level_mask = np.ones(601, dtype=bool)
+
+        # Restrict RAISE to min_raise and max_raise
+        if base_mask[RAISE]:
+            state = self.current_state
+            actor = self.game.current_player
+            bets = state['bets']
+            stacks = state['stacks']
+
+            amount_to_call = max(bets) - bets[actor]
+            min_raise = amount_to_call + self.game.big_blind
+            max_raise = stacks[actor] + bets[actor]
+
+            lo = max(0, int(min_raise))
+            hi = min(600, int(max_raise))
+
+            level_mask[:] = False
+            if hi >= lo:
+                level_mask[lo:hi+1] = True
+        
+        return np.concatenate([base_mask, level_mask])
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.game = Game()
         state, _ = self.game.start()
 
-        total_chips = sum(state['stacks']) + sum(p['amount'] for p in state['pots'])
+        self.total_chips_expected = sum(state['stacks']) + sum(p['amount'] for p in state['pots'])
+        
+        if not hasattr(self, 'iteration'):
+            self.iteration = 1  
+        else:
+            self.iteration += 1
+
+        logging.info(f"[RESET] Iteration: {self.iteration}")
         logging.info(f"[RESET] --- New Game ---")
-        logging.info(f"[RESET] Total chips: {total_chips}")
+        logging.info(f"[RESET] Total chips: {self.total_chips_expected}")
         logging.info(f"[RESET] Stacks: {state['stacks']}")
         logging.info(f"[RESET] Pots: {[p['amount'] for p in state['pots']]}")
         logging.info(f"[RESET] Stage: {state['stage']}")
 
         self.current_state = state
         self.prev_stacks = state['stacks'].copy()
+
         return self._encode_state(state), {}
 
     def step(self, action):
-        current_player = self.game.current_player
+        actor = self.game.current_player
         stacks_before = self.current_state['stacks'].copy()
         pots_before = [p['amount'] for p in self.current_state['pots']]
         total_chips_before = sum(stacks_before) + sum(pots_before)
 
-        action_type = int(np.clip(action[0], 0, 2))
-        raw_raise = float(action[1])
+        action_type = int(action[0])
+        raise_level = int(action[1])
 
         bets = self.current_state['bets']
-        amount_to_call = max(bets) - bets[current_player]
+        amount_to_call = max(bets) - bets[actor]
         min_raise = amount_to_call + self.game.big_blind
-        max_raise = stacks_before[current_player] + bets[current_player]
-        raise_amount = min_raise + raw_raise * (max_raise - min_raise)
+        max_raise = stacks_before[actor] + bets[actor]
 
-        hand = self.current_state['player_hands'][current_player]
+        valid_mask = self.game.get_valid_actions_mask()
+        final_action = FOLD
+        final_raise = None
+        
+        
+        if action_type == RAISE:
+            raise_span = max_raise - min_raise
+            
+            if raise_span < 0:
+                candidate = int(max_raise)
+
+            else:
+                candidate = min_raise + (raise_level % (raise_span + 1))
+            
+            candidate = max(min_raise, min(candidate, max_raise))
+
+            if self.game.is_action_valid(RAISE, amount_to_call, candidate):
+                final_action = RAISE
+                final_raise = candidate
+        
+        elif action_type == CALL and self.game.is_action_valid(CALL, amount_to_call):
+            final_action = CALL
+        
+        elif action_type == CHECK and self.game.is_action_valid(CHECK, amount_to_call):
+            final_action = CHECK
+
+        elif action_type == FOLD:
+            final_action = FOLD
+
+        if final_action == FOLD:
+            _ = self.game.action(FOLD, amount_to_call)
+
+        elif final_action == CHECK:
+            _ = self.game.action(CHECK, amount_to_call)
+
+        elif final_action == CALL:
+            _ = self.game.action(CALL, amount_to_call)
+
+        elif final_action == RAISE:
+            _ = self.game.action(RAISE, amount_to_call, final_raise)
+
+        if self.game.eliminated[actor] or self.game.folded[actor] or self.current_state['stacks'][actor] == 0:
+            logging.info(f"[STEP] Auto-advance: Player {actor} cannot act.")
+
+            self.game.acted[actor] = True
+
+            if not self.game.betting_round_over():
+                self.game.next_player()
+
+        hand = self.current_state['player_hands'][actor]
         community = self.current_state['community_cards']
 
-        logging.info(f"[STEP] --- Player {current_player} Turn ---")
+        logging.info(f"[STEP] --- Player {actor} Turn ---")
         logging.info(f"[STEP] Hand: {hand}")
         logging.info(f"[STEP] Community: {community}")
-        logging.info(f"[STEP] Action requested: ({action[0]}, {action[1]} -> Executed: ({action_type}, {raise_amount})")
-        logging.info(f"Stack: {stacks_before[current_player]}")
+        logging.info(f"[STEP] Action requested: (action_type={action_type}, raise_level={raise_level}) -> Executed: ({action_type}, {final_raise})")
+        logging.info(f"Stack: {stacks_before[actor]}")
         logging.info(f"Bets: {bets}")
         logging.info(f"Amount to Call: {amount_to_call}")
         logging.info(f"Pot before action: {pots_before}")
         logging.info(f"Total chips before action: {total_chips_before}")
 
-        if not self.game.is_action_valid(action_type, amount_to_call, raise_amount):
-            logging.warning(f"[INVALID ACTION] ({action_type}, {raise_amount} is invalid. Forcing FOLD.)")
-            self.game.action(FOLD, amount_to_call)
-        else:
-            self.game.action(action_type, amount_to_call, raise_amount)
-        
         new_state = self.game.get_state()
-        
         stacks_after = new_state['stacks']
         pots_after = [p['amount'] for p in new_state['pots']]
         total_chips_after = sum(stacks_after) + sum(pots_after)
@@ -88,14 +187,14 @@ class PokerEnv(gym.Env):
         logging.info(f"[STEP] Pot after action: {pots_after}")
         logging.info(f"[STEP] Total chips after action: {total_chips_after}")
 
-        if total_chips_after != 600:
+        if total_chips_after != self.total_chips_expected:
             logging.warning(f"[WARNING] CHIP LEAKAGE DETECTED! Total chips changed from {total_chips_before} to {total_chips_after}.")
-
-        done = new_state['done']
-        reward = self._calculate_reward(new_state)
+        
+        reward = self._calculate_reward(actor, new_state)
         self.current_state = new_state
+        self.prev_stacks = new_state['stacks'].copy()
 
-        terminated = done
+        terminated = bool(new_state['done'])
         truncated = False
 
         return self._encode_state(new_state), reward, terminated, truncated, {}
@@ -131,11 +230,11 @@ class PokerEnv(gym.Env):
         vec += [0.0] * (5 - len(community))  # Pad to 5 cards
 
         # --- Encode stack and pot size ---
-        vec.append(stack / 100.0)
-        vec.append(pot / 100.0)
+        vec.append(stack / 600.0)
+        vec.append(pot / 600.0)
         
         # --- Encode bets ---
-        vec += [b / 100.0 for b in bets]
+        vec += [b / 600.0 for b in bets]
 
         # --- Encode game stage one-hot ---
         stage_map = {'preflop': 0, 'flop': 1, 'turn': 2, 'river': 3, 'showdown': 4}
@@ -149,29 +248,26 @@ class PokerEnv(gym.Env):
 
         return np.array(vec, dtype=np.float32)
     
-    def _calculate_reward(self, new_state):
-        current_player = new_state['current_player']
-        prev_stack = self.prev_stacks[current_player]
-        new_stack = new_state['stacks'][current_player]
-
-        stack_diff = (new_stack - prev_stack) / 100.0  # Normalize stack change
+    def _calculate_reward(self, actor_idx, new_state):
+        prev_stack = self.prev_stacks[actor_idx]
+        new_stack = new_state['stacks'][actor_idx]
+        stack_diff = (new_stack - prev_stack) / 600.0
 
         reward = stack_diff
 
-        if new_state['done']:
-            if 'winner' in new_state and new_state['winner'] == current_player:
-                reward += 1.0
-        
-        folded = new_state['folded'][current_player]
+        folded = new_state['folded'][actor_idx]
+
         if folded and stack_diff < 0:
             reward -= 0.1
-        
-        self.prev_stacks = new_state['stacks'].copy()
 
         return reward
 
+def mask_fn(env: PokerEnv):
+    return env.get_action_mask()
+
 env = PokerEnv()
+env = ActionMasker(env, mask_fn)
 check_env(env)
 
-model = PPO("MlpPolicy", env, verbose=1)
-model.learn(total_timesteps=50000)
+model = MaskablePPO("MlpPolicy", env, verbose=1)
+model.learn(total_timesteps=500)
