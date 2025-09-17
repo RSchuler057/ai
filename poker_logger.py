@@ -61,6 +61,14 @@ class PokerLogger:
 
     def log_showdown(self, game):
         state = game.get_state()
+        
+        if game.showdown_results and game.showdown_results[0]["winning_hand_types"] == ["Uncontested"]:
+            winner = game.showdown_results[0]["winners"][0]
+            total = game.showdown_results[0]["pot"]
+            self.logger.info(f"Everyone folded. {winner} win {total} chips")
+            self.logger.info("---------------")
+            return
+        
         self.logger.info("--- Showdown ---")
         self.logger.info(f"Board: {' '.join(Card.int_to_pretty_str(c) for c in state['community_cards'])}")
 

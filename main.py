@@ -63,8 +63,24 @@ def get_random_action(game):
     act = random.choice(possible)
     amount = None
 
-    if act == "raise":
+    if act == "fold":
+        act = 0
+        return act, amount
+    
+    elif act == "check":
+        act = 3
+        return act, amount
+    
+    elif act == "call":
+        act = 1
+        return act, amount
+
+    elif act == "raise":
         amount = random.randint(actions["min_total_bet"], actions["max_total_bet"])
+        act = 2
+    
+    else:
+        act = 0
 
     return act, amount
     

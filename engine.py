@@ -94,6 +94,16 @@ class Game():
         can_fold = not self.eliminated[i] and not self.folded[i] and self.stacks[i] > 0
         can_raise, min_total, max_total = self.raise_window(i, amt_to_call)
 
+        if min_total > max_total:
+            if self.stacks[i] > 0:
+                can_raise = True
+                min_total = self.bets[i] + self.stacks[i]
+                max_total = min_total
+            
+            else:
+                can_raise = False
+                min_total, max_total = 0, 0
+
         return {
             "fold": can_fold,
             "check": can_check,
