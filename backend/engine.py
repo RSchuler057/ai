@@ -91,7 +91,7 @@ class Game():
         amt_to_call = self.amount_to_call(i)
         can_check = amt_to_call == 0 and self.stacks[i] > 0
         can_call = amt_to_call > 0 and self.stacks[i] > 0
-        can_fold = not self.eliminated[i] and not self.folded[i] and self.stacks[i] > 0
+        can_fold = not self.eliminated[i] and not self.folded[i] and not can_check
         can_raise, min_total, max_total = self.raise_window(i, amt_to_call)
 
         if min_total > max_total:
@@ -168,7 +168,8 @@ class Game():
         if not first_hand:
             self.advance_button()
         
-        self.logger.log_state(self)
+        if self.logger:    
+            self.logger.log_state(self)
 
     def advance_button(self) -> None:
         """Move button to next non-eliminated seat."""
